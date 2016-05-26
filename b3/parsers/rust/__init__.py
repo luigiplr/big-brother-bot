@@ -1,3 +1,4 @@
+
 __author__ = 'Luigi'
 __version__ = '1.0.0'
 
@@ -8,12 +9,14 @@ import re
 import string
 
 from b3.parsers.q3a.abstractParser import AbstractParser
+from b3.parsers.rust.rcon import Rcon
 from threading import Timer
 
 class RustParser(AbstractParser):
 
     gameName = 'rust'
-
+    OutputClass = Rcon
+    
     _logSync = 3                                             # Value for unbuffered game logging (append mode)
     _counter = {}
 
@@ -33,7 +36,7 @@ class RustParser(AbstractParser):
     _lineClear = re.compile(r'^(?:[0-9:]+\s?)?')
 
     _lineFormats = (
-        # Joined / Disconnected events
+        # Joined / Discsonnected events
         re.compile(
             r'^(?P<ip>\d+\.\d+\.\d+\.\d+)\:\d+\/(?P<steamid>\d+)\/(?P<name>\w+) (?P<type>joined|disconnecting)(\:|) (?P<reason>.*)$'
             , re.IGNORECASE),
@@ -55,6 +58,7 @@ class RustParser(AbstractParser):
         """
         Called after the parser is created before run().
         """
+        self.warning(self.config)
         if not self.config.has_option('server','game_log'):
             self.critical("Your main config file is missing the 'game_log' setting in section 'server'")
             raise SystemExit(220)
@@ -140,7 +144,7 @@ class RustParser(AbstractParser):
 #--LogLineFormats---------------------------------------------------------------
 
 #===============================================================================
-# 
+#
 # *** RUST:
 # Join:                 Platform assembly: C:\Users\Luigi\Downloads\Rust_Server\Server\rustds\RustDedicated_Data\Managed\System.Data.dll (this message is harmless)
 #                       127.0.0.1:62056/76561198282334064/luigiplr joined [windows/76561198282334064]
