@@ -1,4 +1,3 @@
-
 __author__ = 'Luigi'
 __version__ = '1.0.0'
 
@@ -38,12 +37,12 @@ class RustParser(AbstractParser):
     _lineFormats = (
         # Joined / Discsonnected events
         re.compile(
-            r'^(?P<ip>\d+\.\d+\.\d+\.\d+)\:\d+\/(?P<steamid>\d+)\/(?P<name>\w+) (?P<type>joined|disconnecting)(\:|) (?P<reason>.*)$'
+            r'(?P<ip>\d+\.\d+\.\d+\.\d+)\:\d+\/(?P<steamid>\d+)\/(?P<name>\w+) (?P<type>joined|disconnecting)(\:|) (?P<reason>.*)'
             , re.IGNORECASE),
 
-        # Killed event
+        # Killed event: luigiplr[8220/76561198282334064] was killed by Suicide
         re.compile(
-            r'^(?P<name>\w+)\[(?P<extra>\d+)\/(?P<steamid>\d+)\] was killed by (?P<reason>.*)$'
+            r'(?P<name>\w+)\[(?P<extra>\d+)\/(?P<steamid>\d+)\] was (?P<action>killed) by (?P<reason>.*)'
             , re.IGNORECASE)
 
     )
@@ -72,30 +71,12 @@ class RustParser(AbstractParser):
     ####################################################################################################################
 
     def OnSay(self, action, data, match=None):
-        client = self.getClient(match)
-        if not client:
-            self.debug('No client - attempt join')
-            self.OnJ(action, data, match)
-            client = self.getClient(match)
-            if not client:
-                return None
+    	self.debug(action)
 
-        data = match.group('text')
-        if data and ord(data[:1]) == 21:
-            data = data[1:]
 
-        # decode the server data
-        if self.encoding:
-            try:
-                data = data.decode(self.encoding)
-            except Exception, msg:
-                self.warning('ERROR: decoding data: %r', msg)
 
-        if client.name != match.group('name'):
-            client.name = match.group('name')
-
-        return self.getEvent('EVT_CLIENT_SAY', data=data, client=client)
-
+    def OnKilled(self, name, steamid, reason, match=None):
+    	self.debug((name, steamid, reason))
 
     ####################################################################################################################
     #                                                                                                                  #
@@ -111,34 +92,6 @@ class RustParser(AbstractParser):
     #                                                                                                                  #
     ####################################################################################################################
 
-    def unban(self, client, reason='', admin=None, silent=False, *kwargs):
-        """
-        Unban a client.
-        :param client: The client to unban
-        :param reason: The reason for the unban
-        :param admin: The admin who unbanned this client
-        :param silent: Whether or not to announce this unban
-        """
-        name = self.stripColors(client.exactName)
-        result = self.write(self.getCommand('unban', name=name, reason=reason))
-        if admin:
-            admin.message(result)
-
-    def sync(self):
-        """
-        For all connected players returned by self.get_player_list(), get the matching Client
-        object from self.clients (with self.clients.get_by_cid(cid) or similar methods) and
-        look for inconsistencies. If required call the client.disconnect() method to remove
-        a client from self.clients.
-        """
-        self.debug('synchronising clients...')
-        plist = self.getPlayerList(maxRetries=4)
-        mlist = {}
-
-        return mlist
-
-    def authorizeClients(self):
-        self.debug('authing clients...')
 
 
 #--LogLineFormats---------------------------------------------------------------

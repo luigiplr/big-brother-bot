@@ -1,10 +1,10 @@
 from threading import Event, Lock
 from socket import timeout
-import re, struct, socket, Queue
+from Queue import Queue
+from b3.lib.rustlib.RustRcon import RustRcon, SERVERDATA_EXECCOMMAND, SERVERDATA_EXECCOMMAND_TYPE, SERVERDATA_AUTH, SERVERDATA_AUTH_TYPE, SourceRconError
 
-__version__ = 'Luigi'
-__author__ = '0.0.1'
-
+__version__ = ''
+__author__ = ''
 
 
 
@@ -14,36 +14,22 @@ class Rcon(object):
     """
     lock = Lock()
 
-    MAX_PACKET_SIZE=4096*1024
-    MAX_INT=0xffffffff
-    TYPE_RESPONSE=0
-    TYPE_COMMAND=2
-    TYPE_PASSWORD=3
-    ID_PASSWORD=1
-    ID_RCON_COMMAND=0xa7
-    buf=''
-
     def __init__(self, console, host, password):
         self.console = console
         self.host, self.port = host
         self.password = password
         self.timeout = 1.0
-        self.queue = Queue.Queue()
+        self.queue = Queue()
         self.stop_event = Event()
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server = RustRcon(self.host, self.port, self.password, self.timeout)
 
-        self.console.info("RCON: connecting to RUST game server")
-
-        if not self.connect():
+        self.console.info("RCON: connecting to Source game server")
+        try:
+            self.server.connect()
+        except timeout, err:
             self.console.error("RCON: timeout error while trying to connect to game server at %s:%s. "
                                "Make sure the rcon_ip and port are correct and that the game server is "
                                "running" % (self.host, self.port))
-        elif self.send_auth():
-            self.console.error("RCON: Authentication failed")
-            self.disconnect()
-        else:
-            self.console.info("RCON: Authentication successful")
-
 
 
     ########################################################
@@ -66,14 +52,9 @@ class Rcon(object):
         with Rcon.lock:
             try:
                 self.console.info("RCON SEND: %s" % cmd)
-                self.send_data(self.ID_RCON_COMMAND, self.TYPE_COMMAND, self.encode_data(cmd));
-                # Receive connection status
-                id, type, msg = self.recv_data()
-                if (id, type) != (self.ID_RCON_COMMAND, self.TYPE_RESPONSE):
-                    print "(%d %d)"%(id, type)
-                    print msg
-                if msg:
-                    data = msg.decode('UTF-8', 'replace')
+                raw_data = self.server.rcon(self.encode_data(cmd))
+                if raw_data:
+                    data = raw_data.decode('UTF-8', 'replace')
                     self.console.info("RCON RECEIVED: %s" % data)
                     return data
             except timeout:
@@ -89,9 +70,9 @@ class Rcon(object):
     def close(self):
         if self.server:
             try:
-                self.console.info("RCON disconnecting from RUST game server")
-                self.disconnect()
-                self.console.verbose("RCON disconnected from RUST game server")
+                self.console.info("RCON disconnecting from Source game server")
+                self.server.disconnect()
+                self.console.verbose("RCON disconnected from Source game server")
             finally:
                 self.server = None
                 del self.server
@@ -103,54 +84,28 @@ class Rcon(object):
     #
     ########################################################
 
+    def _writelines(self):
+        while not self.stop_event.isSet():
+            lines = self.queue.get(True)
+            for cmd in lines:
+                if not cmd:
+                    continue
+                with self.lock:
+                    self.rconNoWait(cmd)
 
-    def recv(self):
-        if self.buf is '':
-            self.buf = self.socket.recv(self.MAX_PACKET_SIZE)
-        # Pop the message length from the buffer
-        msg_len = struct.unpack('I', self.buf[:4])[0]
-        self.buf = self.buf[4:]
-        while len(self.buf) < msg_len:
-            self.buf = self.buf + self.socket.recv(self.MAX_PACKET_SIZE)
-        # Pop the message from the buffer
-        ret_buf, self.buf = self.buf[:msg_len - 2], self.buf[msg_len:]
-        return ret_buf
 
-    def recv_data(self):
-        data = self.recv()
-        (id, type), msg = struct.unpack('II', data[:8]), data[8:]
-        if msg == '':
-            msg = None
-        # Is the data a log message
-        if (id, type) == (0, 4):
-            return self.recv_data()
-        elif (id, type) == (self.MAX_INT, 0):
-            return self.recv_data() 
-        else:
-            return id, type, msg
+    def rconNoWait(self, cmd):
+        """
+        send a single command, do not wait for any response.
+        connect and auth if necessary.
+        """
+        if self.server.authed is not True:
+            self.server.disconnect()
+            self.server.connect()
+            self.server.auth()
 
-    def send_data(self, id, type, payload=None):
-        if payload is None:
-            payload = ''
-        pkt = struct.pack('II', id, type) + payload + "\0\0"
-        pkt = struct.pack('I', len(pkt)) + pkt
-        self.send(pkt)
+        self.server.send(SERVERDATA_EXECCOMMAND, SERVERDATA_EXECCOMMAND_TYPE, self.encode_data(cmd))
 
-    def send_auth(self):
-        self.send_data(self.ID_PASSWORD, self.TYPE_PASSWORD, self.password)
-        # expect (1, 0). This seems to be an ACK
-        id, type, _ = self.recv_data()
-        # Authentication response now comes through
-        id, type, _ = self.recv_data()
-        if id == self.MAX_INT:
-            return -1
-        elif id == self.ID_PASSWORD:
-            return 0
-        else:
-            return -1        
-
-    def send(self, message):
-        self.socket.send(message)
 
     def encode_data(self, data):
         if not data:
@@ -159,15 +114,3 @@ class Rcon(object):
             return data.encode('UTF-8')
         else:
             return data
-
-    def disconnect(self):
-        rekt = self.socket.close()
-        print "Disconnected from RCON"
-        return rekt
-
-    def connect(self):
-        try:
-            self.socket.connect((self.host, self.port))
-            return True
-        except Exception as e:
-            return False
