@@ -47,8 +47,8 @@ class SourceRconError(Exception):
 class RustRcon(object):
     """Example usage:
 
-       import SourceRcon
-       server = SourceRcon.SourceRcon('1.2.3.4', 27015, 'secret')
+       import RustRcon
+       server = RustRcon.RustRcon('1.2.3.4', 27015, 'secret')
        print server.rcon('cvarlist')
     """
 
